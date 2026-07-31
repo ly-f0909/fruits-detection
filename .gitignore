@@ -1,0 +1,24 @@
+# Byte-compiled / caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Runtime artifacts
+tmp/
+*.jpg
+*.jpeg
+*.png
+!assets/**
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+.streamlit/secrets.toml
+
+# Large model weights (download via scripts/download_model.py)
+models/*.pt
+!models/.gitkeep
