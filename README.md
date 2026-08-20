@@ -1,105 +1,73 @@
-# Augmented Vision
+# Augmented Vision — Live AR Demo
 
-Local fruit & vegetable recognition inspired by [food-recognition](https://github.com/lannguyen0910/food-recognition): **YOLOv8s** detection (90 food classes, strong produce coverage) with a Streamlit UI for upload / camera capture and per-100g calorie references.
+Real-time multi-object **fruit & vegetable recognition** from the webcam, with a sci-fi **AR HUD** (corner reticles, leader lines, translucent info cards).
 
+## Features
 
+- Webcam capture with clear failure messages
+- **63-class LVIS fruits & vegetables** model (pineapple, strawberry, grape, watermelon, kiwi, avocado, …)
+- ByteTrack IDs + EMA box smoothing (anti-jitter)
+- AR HUD / simple boxes / clean feed (`H` to cycle)
+- FPS / target count / device overlay
+- Screenshot to `screenshots/` (`S`)
 
-```
-# Augmented Vision — Getting Started
-Fruit & vegetable recognition (YOLOv8s + Streamlit).
+## Quick start
 
-Model: lannguyen0910/food-recognition (YOLOv8s).
-
-## Requirements
-
-Python 3.10+ (3.11/3.12 OK)
-macOS / Linux / Windows
-~2GB free disk (venv + model)
-Network (first-time package + model download)
-
-## 1. Get the code
-
-# Option A — Git
-
-git clone 
-
-cd augmented-vision   # or your folder name
-
-# Option B — Zip
-
-# Unzip the project folder, then cd into it
-
-# Do NOT use a shared .venv from someone else
-
-## 2. Create virtual environment
-
+```bash
 python3 -m venv .venv
-
-# macOS / Linux
-
 source .venv/bin/activate
-
-# Windows (PowerShell)
-
-.venv\Scripts\Activate.ps1
-
-## 3. Install dependencies
-
 pip install -r requirements.txt
+python scripts/download_model.py    # ~52 MB, once
+python main.py --conf 0.20
+```
 
-## 4. Download model weights (~128 MB)
+### Useful flags
 
-python scripts/download_model.py
+```bash
+python main.py --conf 0.15                 # more sensitive
+python main.py --fruits-only               # fruits only (no vegetables)
+python main.py --device mps                # Apple Silicon
+python main.py --imgsz 512                 # faster on CPU
+```
 
-# Expected file:
+### Keyboard
 
-# models/food_yolov8s.pt
+| Key | Action |
+|-----|--------|
+| `H` | Cycle mode: DETECTION → AR HUD → CLEAN |
+| `S` | Save current frame to `screenshots/` |
+| `Q` / `ESC` | Quit and release camera |
 
-# If Google Drive / gdown fails, ask the team lead for
+## Model
 
-# models/food_yolov8s.pt and place it under models/
+| Item | Value |
+|------|-------|
+| Default | `models/fruits_vegetables_yolov8m.pt` |
+| Classes | **63** (LVIS fruits & vegetables subset) |
+| Includes | apple, banana, pineapple, strawberry, grape, watermelon, kiwi, avocado, cherry, lemon, orange, peach, pear, blueberry, raspberry, papaya, coconut, … + vegetables |
+| Source | [henningheyen/Fruits-And-Vegetables-Detection-Dataset](https://github.com/henningheyen/Fruits-And-Vegetables-Detection-Dataset) |
 
-## 5. Run the web app
+Larger (slower/more accurate) weights also available under `models/lvis_fv/`:
+- `yolo_fruits_and_vegetables_v2.pt` (large)
+- `yolo_fruits_and_vegetables_v3.pt` (xlarge)
 
-streamlit run app.py
-
-# Browser should open http://localhost:8501 
-
-# If not, open that URL manually.
-
-## 6. (Optional) CLI test
-
-python cli.py path/to/photo.jpg --conf 0.25 -o tmp/result.jpg
-
-## UI tips
-Sidebar: Upload image or Camera
-Default: "Fruits & vegetables only" is ON
-If nothing is detected: lower Confidence, or turn off produce-only
-First run may be slow (model load); later runs are faster
-
-## Common issues
-ModuleNotFoundError → activate .venv, then pip install -r requirements.txt
-Model not found → run python scripts/download_model.py
-Camera not working → use Upload image instead (browser permission)
-Port 8501 busy → streamlit run app.py --server.port 8502
+```bash
+python main.py --model models/lvis_fv/yolo_fruits_and_vegetables_v2.pt --conf 0.20
+```
 
 ## Project layout
 
-app.py                      # Streamlit UI (English)
-
-cli.py                      # Command-line inference
-
-detector.py                 # Detection + calorie lookup
-
-scripts/download_model.py   # Download pretrained weights
-
-models/food_yolov8s.pt      # Weights (download, not in git)
 ```
-
-
+.
+├── main.py
+├── live_ar/                # camera, detector, smoother, AR HUD
+├── models/
+│   └── fruits_vegetables_yolov8m.pt
+├── scripts/download_model.py
+└── screenshots/
+```
 
 ## Credits
 
-- [lannguyen0910/food-recognition](https://github.com/lannguyen0910/food-recognition)
+- [henningheyen/Fruits-And-Vegetables-Detection-Dataset](https://github.com/henningheyen/Fruits-And-Vegetables-Detection-Dataset)
 - [Ultralytics YOLOv8](https://github.com/ultralytics/ultralytics)
-

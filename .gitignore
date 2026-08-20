@@ -8,10 +8,13 @@ venv/
 
 # Runtime artifacts
 tmp/
+screenshots/*
+!screenshots/.gitkeep
 *.jpg
 *.jpeg
 *.png
 !assets/**
+!screenshots/.gitkeep
 
 # IDE / OS
 .DS_Store
@@ -19,6 +22,10 @@ tmp/
 .vscode/
 .streamlit/secrets.toml
 
-# Large model weights (download via scripts/download_model.py)
-models/*.pt
+# Large model weights — download via: python scripts/download_model.py
+# Do NOT commit .pt files (GitHub limit = 100 MB)
+*.pt
+models/**/*.pt
 !models/.gitkeep
+yolov8*.pt
+yolo11*.pt
