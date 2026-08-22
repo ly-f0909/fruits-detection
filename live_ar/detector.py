@@ -138,7 +138,7 @@ class ProduceDetector:
             source=frame_bgr,
             persist=True,
             tracker=self.config.tracker_cfg,
-            conf=self.config.conf_threshold,
+            conf=min(self.config.conf_threshold, self.config.conf_maintain),
             iou=self.config.iou_threshold,
             imgsz=self.config.imgsz,
             device=self.device,

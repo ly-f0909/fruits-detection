@@ -133,14 +133,21 @@ class AppConfig:
     # 63-class LVIS YOLOv8m by default (apple…pineapple…watermelon…)
     model_name: str = field(default_factory=default_model_path)
     imgsz: int = 640
-    conf_threshold: float = 0.20  # LVIS FV needs a lower threshold for live demos
+    # YOLO inference floor (hysteresis maintain threshold); post-pipeline applies 0.60 for new tracks.
+    conf_threshold: float = 0.35
+    conf_high: float = 0.60
+    conf_maintain: float = 0.35
     iou_threshold: float = 0.50
     device: str | None = None
     max_det: int = 30
-    # When True and model is LVIS: keep all 63 classes.
-    # When fruits_only=True: filter to fruit-like names only.
     produce_only: bool = True
     fruits_only: bool = False
+
+    # Verification / anti-false-positive
+    temporal_min_hits: int = 5
+    verification_stale_frames: int = 8
+    enable_hand_filter: bool = True
+    hand_overlap_reject: float = 0.70
 
     tracker_cfg: str = "bytetrack.yaml"
     ema_alpha: float = 0.35

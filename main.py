@@ -5,11 +5,13 @@ Augmented Vision — Live AR Demo
 Real-time multi-object fruit/vegetable recognition from the webcam with a
 sci-fi AR HUD overlay (corner reticles, leader lines, translucent info cards).
 
+Anti-false-positive pipeline:
+  YOLO track → hand filter → hysteresis conf → temporal stability → EMA smooth → HUD
+
 Usage
 -----
     python main.py
-    python main.py --camera 1 --conf 0.4
-    python main.py --device cpu --imgsz 320
+    python main.py --camera 1 --no-hand-filter
 
 Keys
 ----
@@ -34,6 +36,7 @@ from live_ar.config import AppConfig, DisplayMode, default_model_path
 from live_ar.detector import ProduceDetector
 from live_ar.hud_panel import draw_perf_panel
 from live_ar.smoother import EMABoxSmoother
+from live_ar.verification import VerificationPipeline
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,10 +54,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--imgsz", type=int, default=640, help="Inference size")
     parser.add_argument(
-        "--conf",
+        "--conf-maintain",
         type=float,
-        default=0.20,
-        help="Confidence threshold (0.15–0.25 recommended for LVIS model)",
+        default=0.35,
+        help="Confidence floor for confirmed tracks (hysteresis low)",
+    )
+    parser.add_argument(
+        "--conf-high",
+        type=float,
+        default=0.60,
+        help="Confidence required to confirm a new track (hysteresis high)",
     )
     parser.add_argument("--iou", type=float, default=0.50, help="NMS IoU threshold")
     parser.add_argument(
@@ -68,6 +77,23 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.35,
         help="EMA smoothing factor (0.05–1.0, lower = smoother)",
+    )
+    parser.add_argument(
+        "--min-hits",
+        type=int,
+        default=5,
+        help="Consecutive frames required before rendering a track",
+    )
+    parser.add_argument(
+        "--hand-overlap",
+        type=float,
+        default=0.70,
+        help="Reject produce box if hand overlap ratio exceeds this",
+    )
+    parser.add_argument(
+        "--no-hand-filter",
+        action="store_true",
+        help="Disable MediaPipe hand occlusion filter",
     )
     parser.add_argument(
         "--fruits-only",
@@ -103,12 +129,17 @@ def main() -> int:
         frame_height=args.height,
         model_name=args.model,
         imgsz=args.imgsz,
-        conf_threshold=args.conf,
+        conf_threshold=args.conf_maintain,
+        conf_high=args.conf_high,
+        conf_maintain=args.conf_maintain,
         iou_threshold=args.iou,
         device=args.device,
         ema_alpha=args.ema,
         produce_only=not args.all_classes,
         fruits_only=args.fruits_only,
+        temporal_min_hits=args.min_hits,
+        enable_hand_filter=not args.no_hand_filter,
+        hand_overlap_reject=args.hand_overlap,
     )
 
     screenshot_dir = Path(config.screenshot_dir)
@@ -118,20 +149,18 @@ def main() -> int:
     print("  Augmented Vision — Live AR Demo")
     print("=" * 56)
     print(f"  Camera #{config.camera_index}  |  model={config.model_name}")
+    print(f"  Verify: hits>={config.temporal_min_hits}  conf {config.conf_high:.2f}/{config.conf_maintain:.2f}")
     print("  Keys: [H] mode  [S] screenshot  [Q]/ESC] quit")
     print("=" * 56)
 
     try:
         detector = ProduceDetector(config)
-    except Exception as exc:  # noqa: BLE001 — surface model download / load errors
+    except Exception as exc:  # noqa: BLE001
         print(f"[ERROR] Failed to load model '{config.model_name}': {exc}", file=sys.stderr)
-        print(
-            "Hint: ensure network access on first run so Ultralytics can download weights.",
-            file=sys.stderr,
-        )
         return 1
 
     print(f"[INFO] Inference device: {detector.device_label}")
+    verifier = VerificationPipeline(config)
     smoother = EMABoxSmoother(alpha=config.ema_alpha, stale_frames=config.stale_frames)
 
     try:
@@ -139,6 +168,7 @@ def main() -> int:
         cam.open()
     except CameraError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
+        verifier.close()
         return 1
 
     fps_ema = 0.0
@@ -154,11 +184,10 @@ def main() -> int:
                 time.sleep(0.02)
                 continue
 
-            # --- detect + smooth ---
             raw_dets = detector.infer(frame)
-            dets = smoother.update(raw_dets)
+            verified = verifier.process(frame, raw_dets)
+            dets = smoother.update(verified)
 
-            # --- render ---
             canvas = frame.copy()
             canvas = render_detections(canvas, dets, mode, config)
 
@@ -174,15 +203,17 @@ def main() -> int:
                 num_targets=len(dets),
                 device_label=detector.device_label,
                 mode=mode,
+                pending=verifier.pending_tracks,
+                raw_targets=verifier.stats.raw,
             )
 
             if len(dets) == 0 and mode is not DisplayMode.CLEAN:
                 cv2.putText(
                     canvas,
-                    "No produce detected — try Apple/Banana/Pineapple  (or --conf 0.15)",
+                    "Hold produce steady ~5 frames  |  conf>=0.60 to confirm",
                     (12, canvas.shape[0] - 18),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.50,
+                    0.48,
                     (0, 200, 255),
                     1,
                     cv2.LINE_AA,
@@ -192,7 +223,7 @@ def main() -> int:
                 cv2.putText(
                     canvas,
                     status_msg,
-                    (12, canvas.shape[0] - 18),
+                    (12, canvas.shape[0] - 42),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.55,
                     (0, 255, 180),
@@ -204,7 +235,7 @@ def main() -> int:
             cv2.imshow(config.window_name, canvas)
             key = cv2.waitKey(1) & 0xFF
 
-            if key in (ord("q"), 27):  # q or ESC
+            if key in (ord("q"), 27):
                 break
             if key in (ord("h"), ord("H")):
                 mode = cycle_mode(mode)
@@ -219,6 +250,7 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\n[INFO] Interrupted by user.")
     finally:
+        verifier.close()
         cam.release()
         cv2.destroyAllWindows()
         print("[INFO] Camera released. Bye.")

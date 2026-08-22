@@ -17,6 +17,8 @@ def draw_perf_panel(
     num_targets: int,
     device_label: str,
     mode: DisplayMode,
+    pending: int = 0,
+    raw_targets: int | None = None,
 ) -> np.ndarray:
     """
     Translucent status panel in the top-left corner.
@@ -33,10 +35,18 @@ def draw_perf_panel(
         "AUGMENTED VISION",
         f"FPS     {fps:5.1f}",
         f"Targets {num_targets:5d}",
-        f"Device  {device_label}",
-        f"Mode    {mode_name}",
-        "Keys: H mode | S shot | Q quit",
     ]
+    if pending > 0:
+        lines.append(f"Pending {pending:5d}")
+    if raw_targets is not None and raw_targets != num_targets:
+        lines.append(f"Raw     {raw_targets:5d}")
+    lines.extend(
+        [
+            f"Device  {device_label}",
+            f"Mode    {mode_name}",
+            "Keys: H mode | S shot | Q quit",
+        ]
+    )
 
     pad_x, pad_y = 12, 12
     line_h = 18

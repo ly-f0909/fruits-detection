@@ -5,6 +5,7 @@ numpy>=1.24.0
 torch>=2.0.0
 torchvision>=0.15.0
 lap>=0.5.12
+mediapipe>=0.10.0
 
 # Optional: Streamlit image-upload app (app.py)
 streamlit>=1.32.0
