@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import List, Sequence, Tuple
+from typing import List, Tuple
 
 import cv2
 import numpy as np
 
-from .config import AppConfig, DisplayMode, color_for_label
+from .config import AppConfig, DisplayMode, color_for_label, get_nutrition_info
 from .detector import Detection
 
 
@@ -44,142 +44,60 @@ def _draw_corner_reticle(
     length: int,
     thickness: int,
 ) -> None:
-    """Four targeting brackets instead of a full bounding rectangle."""
+    """Four targeting brackets (no center crosshair — keeps the view calm)."""
     length = max(8, min(length, (x2 - x1) // 3, (y2 - y1) // 3))
 
-    # TL
     cv2.line(frame, (x1, y1), (x1 + length, y1), color, thickness, cv2.LINE_AA)
     cv2.line(frame, (x1, y1), (x1, y1 + length), color, thickness, cv2.LINE_AA)
-    # TR
     cv2.line(frame, (x2, y1), (x2 - length, y1), color, thickness, cv2.LINE_AA)
     cv2.line(frame, (x2, y1), (x2, y1 + length), color, thickness, cv2.LINE_AA)
-    # BL
     cv2.line(frame, (x1, y2), (x1 + length, y2), color, thickness, cv2.LINE_AA)
     cv2.line(frame, (x1, y2), (x1, y2 - length), color, thickness, cv2.LINE_AA)
-    # BR
     cv2.line(frame, (x2, y2), (x2 - length, y2), color, thickness, cv2.LINE_AA)
     cv2.line(frame, (x2, y2), (x2, y2 - length), color, thickness, cv2.LINE_AA)
 
-    # Center crosshair (subtle)
-    cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-    arm = max(4, length // 3)
-    cv2.line(frame, (cx - arm, cy), (cx + arm, cy), color, 1, cv2.LINE_AA)
-    cv2.line(frame, (cx, cy - arm), (cx, cy + arm), color, 1, cv2.LINE_AA)
-    cv2.circle(frame, (cx, cy), 2, color, -1, cv2.LINE_AA)
 
-
-def _draw_leader_line(
+def _draw_compact_card(
     frame: np.ndarray,
-    anchor: Tuple[int, int],
-    card_anchor: Tuple[int, int],
-    color: Color,
-) -> None:
-    """Polyline from object top-center → elbow → HUD card."""
-    ax, ay = anchor
-    cx, cy = card_anchor
-    # Elbow sits above the object, offset sideways toward the card.
-    mid_x = ax + int(0.55 * (cx - ax))
-    mid_y = min(ay, cy) - 28
-    pts = np.array([[ax, ay], [mid_x, mid_y], [cx, cy]], dtype=np.int32)
-    cv2.polylines(frame, [pts], False, color, 1, cv2.LINE_AA)
-    cv2.circle(frame, (ax, ay), 3, color, -1, cv2.LINE_AA)
-    cv2.circle(frame, (cx, cy), 3, color, -1, cv2.LINE_AA)
-
-
-def _estimate_geometry(det: Detection) -> Tuple[str, str]:
-    """
-    Lightweight geometric cues from the 2D box (demo-friendly, not metric scale).
-
-    Returns human-readable diameter (px) and aspect ratio strings.
-    """
-    w, h = det.width, det.height
-    diameter_px = 0.5 * (w + h)
-    ratio = (w / h) if h > 1e-3 else 0.0
-    return f"{diameter_px:.0f}px", f"{ratio:.2f}"
-
-
-def _draw_hud_card(
-    frame: np.ndarray,
-    origin: Tuple[int, int],
+    x: int,
+    y: int,
     det: Detection,
     color: Color,
     config: AppConfig,
 ) -> None:
-    """Semi-transparent info panel at the end of the leader line."""
-    x, y = origin
+    """Compact label: name · conf + calories only."""
     w, h = config.card_width, config.card_height
     fh, fw = frame.shape[:2]
-
-    # Keep card on-screen
     x = int(np.clip(x, 8, fw - w - 8))
     y = int(np.clip(y, 8, fh - h - 8))
 
-    # Panel background + neon border
     _blend_rect(frame, x, y, x + w, y + h, (18, 22, 28), config.hud_alpha)
     cv2.rectangle(frame, (x, y), (x + w, y + h), color, 1, cv2.LINE_AA)
-    # Top accent bar
-    cv2.rectangle(frame, (x, y), (x + w, y + 3), color, -1, cv2.LINE_AA)
+    cv2.rectangle(frame, (x, y), (x + 3, y + h), color, -1, cv2.LINE_AA)
 
-    diameter, ratio = _estimate_geometry(det)
-    title = det.label.upper()
-    conf_pct = int(round(det.confidence * 100))
+    title = f"{det.label}  {det.confidence:.0%}"
+    nutrition = get_nutrition_info(det.label)
 
     cv2.putText(
         frame,
         title,
-        (x + 10, y + 24),
+        (x + 12, y + 22),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.62,
+        0.55,
         (240, 245, 250),
         2,
         cv2.LINE_AA,
     )
     cv2.putText(
         frame,
-        f"ID {det.track_id}  ·  {conf_pct}%",
-        (x + 10, y + 46),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.42,
-        (180, 190, 200),
-        1,
-        cv2.LINE_AA,
-    )
-    cv2.putText(
-        frame,
-        f"Diam {diameter}   Ratio {ratio}",
-        (x + 10, y + 66),
+        nutrition,
+        (x + 12, y + 46),
         cv2.FONT_HERSHEY_SIMPLEX,
         0.40,
-        (160, 175, 190),
+        (0, 230, 200),
         1,
         cv2.LINE_AA,
     )
-
-    # Confidence bar
-    bar_x1, bar_y1 = x + 10, y + h - 16
-    bar_x2, bar_y2 = x + w - 10, y + h - 8
-    cv2.rectangle(frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (40, 48, 56), -1)
-    fill = int((bar_x2 - bar_x1) * float(np.clip(det.confidence, 0.0, 1.0)))
-    cv2.rectangle(frame, (bar_x1, bar_y1), (bar_x1 + fill, bar_y2), color, -1)
-
-
-def _card_origin_for(
-    det: Detection,
-    frame_shape: Sequence[int],
-    card_w: int,
-    card_h: int,
-    index: int,
-) -> Tuple[int, int]:
-    """Place HUD cards above objects with a slight fan-out to reduce overlap."""
-    fh, fw = frame_shape[:2]
-    ax, ay = det.top_center
-    # Alternate left/right offsets by track order
-    side = 1 if (index % 2 == 0) else -1
-    ox = int(ax + side * (70 + 15 * (index % 3)))
-    oy = int(ay - card_h - 48)
-    ox = int(np.clip(ox, 8, fw - card_w - 8))
-    oy = int(np.clip(oy, 8, fh - card_h - 8))
-    return ox, oy
 
 
 def draw_simple_boxes(
@@ -187,21 +105,34 @@ def draw_simple_boxes(
     detections: List[Detection],
     config: AppConfig,
 ) -> np.ndarray:
-    """Classic detection mode: rectangle + label."""
+    """Detection mode: box + label + calories."""
     out = frame
     for det in detections:
         color = color_for_label(det.label)
         x1, y1, x2, y2 = map(int, (det.x1, det.y1, det.x2, det.y2))
         cv2.rectangle(out, (x1, y1), (x2, y2), color, 2, cv2.LINE_AA)
+
         tag = f"{det.label} {det.confidence:.0%}"
+        nutrition = get_nutrition_info(det.label)
+        ty = max(36, y1 - 10)
         cv2.putText(
             out,
             tag,
-            (x1, max(20, y1 - 8)),
+            (x1, ty - 16),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.55,
             color,
             2,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            out,
+            nutrition,
+            (x1, ty),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.42,
+            (0, 230, 200),
+            1,
             cv2.LINE_AA,
         )
     return out
@@ -212,9 +143,9 @@ def draw_ar_hud(
     detections: List[Detection],
     config: AppConfig,
 ) -> np.ndarray:
-    """Full AR HUD: reticle, leader line, translucent info card."""
+    """AR HUD: corner brackets + compact card parked above the box (no leader lines)."""
     out = frame
-    for i, det in enumerate(detections):
+    for det in detections:
         color = color_for_label(det.label)
         x1, y1, x2, y2 = map(int, (det.x1, det.y1, det.x2, det.y2))
         _draw_corner_reticle(
@@ -228,20 +159,9 @@ def draw_ar_hud(
             config.reticle_thickness,
         )
 
-        card_xy = _card_origin_for(
-            det, out.shape, config.card_width, config.card_height, i
-        )
-        anchor = (int(det.cx), int(det.y1))
-        # Leader attaches to the bottom-center of the card
-        line_end = (card_xy[0] + config.card_width // 2, card_xy[1] + config.card_height)
-        # Prefer attaching to the nearer vertical edge of the card
-        if abs(anchor[0] - card_xy[0]) < abs(anchor[0] - (card_xy[0] + config.card_width)):
-            line_end = (card_xy[0], card_xy[1] + 20)
-        else:
-            line_end = (card_xy[0] + config.card_width, card_xy[1] + 20)
-
-        _draw_leader_line(out, anchor, line_end, color)
-        _draw_hud_card(out, card_xy, det, color, config)
+        card_x = x1
+        card_y = y1 - config.card_height - 8
+        _draw_compact_card(out, card_x, card_y, det, color, config)
     return out
 
 
@@ -252,8 +172,6 @@ def render_detections(
     config: AppConfig,
 ) -> np.ndarray:
     """Dispatch drawing based on the active display mode."""
-    if mode is DisplayMode.CLEAN:
-        return frame
     if mode is DisplayMode.DETECTION:
         return draw_simple_boxes(frame, detections, config)
     return draw_ar_hud(frame, detections, config)

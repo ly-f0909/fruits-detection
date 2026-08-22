@@ -3,7 +3,7 @@
 Augmented Vision — Live AR Demo
 ================================
 Real-time multi-object fruit/vegetable recognition from the webcam with a
-sci-fi AR HUD overlay (corner reticles, leader lines, translucent info cards).
+sci-fi AR HUD overlay (corner reticles, translucent info cards).
 
 Anti-false-positive pipeline:
   YOLO track → hand filter → hysteresis conf → temporal stability → EMA smooth → HUD
@@ -11,11 +11,11 @@ Anti-false-positive pipeline:
 Usage
 -----
     python main.py
-    python main.py --camera 1 --no-hand-filter
+    python main.py --no-hand-filter
 
 Keys
 ----
-    h / H   cycle display mode  (DETECTION → AR HUD → CLEAN)
+    h / H   cycle display mode  (DETECTION ↔ AR HUD)
     s / S   save screenshot to screenshots/
     q / ESC quit and release the camera
 """
@@ -23,10 +23,14 @@ Keys
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
+
+# Avoid MediaPipe Metal FATAL abort on macOS before any mediapipe import.
+os.environ.setdefault("MEDIAPIPE_DISABLE_GPU", "1")
 
 import cv2
 
@@ -43,26 +47,36 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Augmented Vision — real-time produce AR HUD demo",
     )
-    parser.add_argument("--camera", type=int, default=0, help="Webcam device index")
-    parser.add_argument("--width", type=int, default=1280, help="Capture width")
-    parser.add_argument("--height", type=int, default=720, help="Capture height")
+    parser.add_argument(
+        "--camera",
+        type=int,
+        default=1,
+        help="Webcam device index (default: 1 = Mac built-in; 0 is often Continuity iPhone)",
+    )
+    parser.add_argument("--width", type=int, default=960, help="Capture width")
+    parser.add_argument("--height", type=int, default=540, help="Capture height")
     parser.add_argument(
         "--model",
         type=str,
         default=default_model_path(),
         help="Ultralytics weights (default: 63-class LVIS fruits & vegetables)",
     )
-    parser.add_argument("--imgsz", type=int, default=640, help="Inference size")
+    parser.add_argument(
+        "--imgsz",
+        type=int,
+        default=384,
+        help="Inference size (384 default on CPU; 320 faster, 640 sharper)",
+    )
     parser.add_argument(
         "--conf-maintain",
         type=float,
-        default=0.35,
+        default=0.25,
         help="Confidence floor for confirmed tracks (hysteresis low)",
     )
     parser.add_argument(
         "--conf-high",
         type=float,
-        default=0.60,
+        default=0.40,
         help="Confidence required to confirm a new track (hysteresis high)",
     )
     parser.add_argument("--iou", type=float, default=0.50, help="NMS IoU threshold")
@@ -81,7 +95,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--min-hits",
         type=int,
-        default=5,
+        default=3,
         help="Consecutive frames required before rendering a track",
     )
     parser.add_argument(
@@ -93,7 +107,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-hand-filter",
         action="store_true",
-        help="Disable MediaPipe hand occlusion filter",
+        help="Disable hand filter (may label palms as produce)",
     )
     parser.add_argument(
         "--fruits-only",
@@ -138,7 +152,9 @@ def main() -> int:
         produce_only=not args.all_classes,
         fruits_only=args.fruits_only,
         temporal_min_hits=args.min_hits,
-        enable_hand_filter=not args.no_hand_filter,
+        enable_hand_filter=(
+            False if args.no_hand_filter else True
+        ),
         hand_overlap_reject=args.hand_overlap,
     )
 
@@ -149,8 +165,9 @@ def main() -> int:
     print("  Augmented Vision — Live AR Demo")
     print("=" * 56)
     print(f"  Camera #{config.camera_index}  |  model={config.model_name}")
+    print(f"  imgsz={config.imgsz}  |  capture {config.frame_width}x{config.frame_height}")
     print(f"  Verify: hits>={config.temporal_min_hits}  conf {config.conf_high:.2f}/{config.conf_maintain:.2f}")
-    print("  Keys: [H] mode  [S] screenshot  [Q]/ESC] quit")
+    print("  Keys: [H] mode  [S] screenshot  [Q] / ESC quit")
     print("=" * 56)
 
     try:
@@ -160,6 +177,12 @@ def main() -> int:
         return 1
 
     print(f"[INFO] Inference device: {detector.device_label}")
+    if detector.device == "cpu":
+        print(
+            "[TIP] CPU mode — PyTorch MPS needs macOS 14+. "
+            "You do NOT need a new Mac: upgrade this machine to macOS 14/15 for GPU speed, "
+            "or use --imgsz 320 now."
+        )
     verifier = VerificationPipeline(config)
     smoother = EMABoxSmoother(alpha=config.ema_alpha, stale_frames=config.stale_frames)
 
@@ -207,10 +230,10 @@ def main() -> int:
                 raw_targets=verifier.stats.raw,
             )
 
-            if len(dets) == 0 and mode is not DisplayMode.CLEAN:
+            if len(dets) == 0:
                 cv2.putText(
                     canvas,
-                    "Hold produce steady ~5 frames  |  conf>=0.60 to confirm",
+                    "Hold produce steady  |  hand false-positives filtered",
                     (12, canvas.shape[0] - 18),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.48,

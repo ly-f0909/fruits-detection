@@ -20,7 +20,6 @@ class DisplayMode(Enum):
 
     DETECTION = 0
     AR_HUD = 1
-    CLEAN = 2
 
 
 # COCO fallback — only 5 produce classes (no pineapple).
@@ -92,6 +91,49 @@ LABEL_COLORS: Dict[str, Tuple[int, int, int]] = {
 
 DEFAULT_ACCENT: Tuple[int, int, int] = (0, 255, 180)
 
+# Per-100g nutrition snippets shown on the AR HUD card.
+NUTRITION_DATA: Dict[str, str] = {
+    "apple": "~52 kcal/100g | High Fiber",
+    "banana": "~89 kcal/100g | Rich in Vit B6",
+    "grape": "~67 kcal/100g | Antioxidants",
+    "orange": "~47 kcal/100g | Vitamin C",
+    "lemon": "~29 kcal/100g | High Citric Acid",
+    "strawberry": "~32 kcal/100g | Rich in Vit C",
+    "watermelon": "~30 kcal/100g | Hydration",
+    "pineapple": "~50 kcal/100g | Bromelain",
+    "peach": "~39 kcal/100g | Vitamin A & C",
+    "mango": "~60 kcal/100g | Rich in Fiber",
+    "kiwi": "~61 kcal/100g | High Vit C",
+    "tomato": "~18 kcal/100g | Lycopene",
+    "carrot": "~41 kcal/100g | Beta-Carotene",
+    "broccoli": "~34 kcal/100g | Sulforaphane",
+    "cucumber": "~15 kcal/100g | Low Calorie",
+}
+
+DEFAULT_NUTRITION = "~50 kcal/100g | Organic Produce"
+
+
+def get_nutrition_info(class_name: str) -> str:
+    """
+    Look up nutrition text for a detector label.
+
+    Falls back to ``DEFAULT_NUTRITION`` when the class is unknown so HUD
+    rendering never crashes on unseen LVIS labels.
+    """
+    key = class_name.lower().split("/")[0].strip().replace("_", " ")
+    # Exact match, e.g. "apple"
+    if key in NUTRITION_DATA:
+        return NUTRITION_DATA[key]
+    # First token match, e.g. "kiwi fruit" → "kiwi"
+    first = key.split()[0] if key else ""
+    if first in NUTRITION_DATA:
+        return NUTRITION_DATA[first]
+    # Substring match, e.g. "bell pepper" vs sparse keys
+    for name, info in NUTRITION_DATA.items():
+        if name in key or key in name:
+            return info
+    return NUTRITION_DATA.get(key, DEFAULT_NUTRITION)
+
 
 def short_label(raw: str) -> str:
     """Turn LVIS-style names into short HUD labels (e.g. orange/orange fruit → Orange)."""
@@ -126,17 +168,19 @@ def color_for_label(label: str) -> Tuple[int, int, int]:
 class AppConfig:
     """Runtime knobs for camera, detector, tracker and HUD."""
 
-    camera_index: int = 0
-    frame_width: int = 1280
-    frame_height: int = 720
+    # Mac Continuity often takes index 0 (iPhone); built-in camera is usually 1.
+    camera_index: int = 1
+    frame_width: int = 960
+    frame_height: int = 540
 
     # 63-class LVIS YOLOv8m by default (apple…pineapple…watermelon…)
+    # 384 ≈ better FPS on CPU; raise to 416/640 when MPS (macOS 14+) is available.
     model_name: str = field(default_factory=default_model_path)
-    imgsz: int = 640
-    # YOLO inference floor (hysteresis maintain threshold); post-pipeline applies 0.60 for new tracks.
-    conf_threshold: float = 0.35
-    conf_high: float = 0.60
-    conf_maintain: float = 0.35
+    imgsz: int = 384
+    # YOLO inference floor (hysteresis maintain threshold); post-pipeline applies conf_high for new tracks.
+    conf_threshold: float = 0.25
+    conf_high: float = 0.40
+    conf_maintain: float = 0.25
     iou_threshold: float = 0.50
     device: str | None = None
     max_det: int = 30
@@ -144,20 +188,21 @@ class AppConfig:
     fruits_only: bool = False
 
     # Verification / anti-false-positive
-    temporal_min_hits: int = 5
+    temporal_min_hits: int = 3
     verification_stale_frames: int = 8
+    # Mild hand filter: only finger-sticks + clear holding hands (fruit-safe).
     enable_hand_filter: bool = True
-    hand_overlap_reject: float = 0.70
+    hand_overlap_reject: float = 0.75
 
     tracker_cfg: str = "bytetrack.yaml"
     ema_alpha: float = 0.35
     stale_frames: int = 15
 
     hud_alpha: float = 0.55
-    reticle_len: int = 22
+    reticle_len: int = 18
     reticle_thickness: int = 2
     card_width: int = 220
-    card_height: int = 96
+    card_height: int = 58
 
     screenshot_dir: str = "screenshots"
     window_name: str = "Augmented Vision | Live AR Demo"

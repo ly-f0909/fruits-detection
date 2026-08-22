@@ -28,7 +28,6 @@ def draw_perf_panel(
     mode_name = {
         DisplayMode.DETECTION: "DETECTION",
         DisplayMode.AR_HUD: "AR HUD",
-        DisplayMode.CLEAN: "CLEAN",
     }[mode]
 
     lines = [

@@ -1,13 +1,13 @@
 # Augmented Vision — Live AR Demo
 
-Real-time multi-object **fruit & vegetable recognition** from the webcam, with a sci-fi **AR HUD** (corner reticles, leader lines, translucent info cards).
+Real-time multi-object **fruit & vegetable recognition** from the webcam, with a sci-fi **AR HUD** (corner reticles + compact calorie cards).
 
 ## Features
 
 - Webcam capture with clear failure messages
 - **63-class LVIS fruits & vegetables** model (pineapple, strawberry, grape, watermelon, kiwi, avocado, …)
 - ByteTrack IDs + EMA box smoothing (anti-jitter)
-- AR HUD / simple boxes / clean feed (`H` to cycle)
+- AR HUD / detection boxes with calories (`H` to cycle)
 - FPS / target count / device overlay
 - Screenshot to `screenshots/` (`S`)
 
@@ -18,23 +18,27 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python scripts/download_model.py    # ~52 MB, once
-python main.py --conf 0.20
+python main.py                      # camera=1, imgsz=416 by default
 ```
+
+Defaults: **camera index 1**, capture `960×540`, inference `imgsz=416`. Hand filter **on** (rejects palm FPs; fruit-safe).
 
 ### Useful flags
 
 ```bash
-python main.py --conf 0.15                 # more sensitive
+python main.py --camera 0                  # Continuity / other cam
+python main.py --imgsz 320                 # faster on CPU (~macOS 13 has no MPS)
+python main.py --imgsz 640                 # sharper, slower
+python main.py --no-hand-filter            # allow palm false-positives (debug)
 python main.py --fruits-only               # fruits only (no vegetables)
-python main.py --device mps                # Apple Silicon
-python main.py --imgsz 512                 # faster on CPU
+python main.py --device mps                # Apple Silicon (needs macOS 14+)
 ```
 
 ### Keyboard
 
 | Key | Action |
 |-----|--------|
-| `H` | Cycle mode: DETECTION → AR HUD → CLEAN |
+| `H` | Cycle mode: DETECTION ↔ AR HUD |
 | `S` | Save current frame to `screenshots/` |
 | `Q` / `ESC` | Quit and release camera |
 
